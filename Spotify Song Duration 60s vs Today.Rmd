@@ -20,8 +20,8 @@ and mixing, and then plot the posterior density vs. the prior.
 ```{r}
 library(invgamma)
 set.seed(251)
-top_60 <- read.csv("/Users/laynelarson12/Documents/Resumes and Stuff/Data Analysis Projects/Data Analysis Projects/all_out_60s.csv")
-top_today <- read.csv("/Users/laynelarson12/Documents/Resumes and Stuff/Data Analysis Projects/Data Analysis Projects/todays_top_hits.csv")
+top_60 <- read.csv("/Users/laynelarson12/Documents/GitHub/data_projects/all_out_60s.csv")
+top_today <- read.csv("/Users/laynelarson12/Documents/GitHub/data_projects/todays_top_hits.csv")
 
 # First we need to extract just the duration column as our data. Also lets 
 # convert from milliseconds into seconds so the data is cleaner to work with
