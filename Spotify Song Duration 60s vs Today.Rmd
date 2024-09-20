@@ -1,0 +1,196 @@
+---
+title: "Spotify Song Duration 60s vs Today"
+author: "Layne Larson"
+date: "2024-04-17"
+output: 
+pdf_document:
+  latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+First lets start with the analysis on the 1960s song length. We will run through
+a gibbs sampler using the data from the 1960s playlist, assess the convergence 
+and mixing, and then plot the posterior density vs. the prior.
+```{r}
+library(invgamma)
+set.seed(251)
+top_60 <- read.csv("/Users/laynelarson12/Documents/Resumes and Stuff/Data Analysis Projects/Data Analysis Projects/all_out_60s.csv")
+top_today <- read.csv("/Users/laynelarson12/Documents/Resumes and Stuff/Data Analysis Projects/Data Analysis Projects/todays_top_hits.csv")
+
+# First we need to extract just the duration column as our data. Also lets 
+# convert from milliseconds into seconds so the data is cleaner to work with
+
+duration_60 <- top_60$Duration..ms./1000
+duration_today <- top_today$Duration..ms./1000
+
+
+# Prior parameter values
+# song length is measured in milliseconds, and we believe songs in the 60s to be
+# around 3 minutes in length. So lets choose a prior m of 180.
+# then we would expect songs to vary by a minute on either end, so lets have a
+# variance v of (120/6)^2 = 400
+m_60 <- 180; v_60 <- 400
+# for variance, lets use a=2 and b=3600 to approximate a mean variance of 3600,
+# or a standard deviation for the sigma2 of 60.
+a <- 2 ; b <- 3600
+
+# use a gibbs sampler to find the posterior
+unit8.gibbs <- function(data,m=0,v=1000,a=1,b=1,M=5000, burn=1000){
+  ybar <- mean(data); n <- length(data)
+  
+  mu <- numeric()
+  sigma2 <- numeric()
+  
+  mu[1] <- rnorm(1, ybar, 100) 
+  sigma2[1] <- rnorm(1, var(data), 10)
+  
+  for(i in 2:M) { 
+    astar <- a + 0.5*n
+    bstar <- b + 0.5*sum((data - mu[i-1])^2)
+    sigma2[i] <- rinvgamma(1, shape=astar, rate=bstar)
+    
+    mstar <- (n*ybar/sigma2[i] + m/v)/(n/sigma2[i] + 1/v)
+    vstar <- 1/(n/sigma2[i] + 1/v)
+    mu[i] <- rnorm(1, mstar, sqrt(vstar))
+  }
+  
+  out <- cbind(mu, sigma2)[-c(1:burn),]
+  colnames(out) <- c("mu","sigma2")
+  out
+}
+
+
+# run the gibbs sampler for the 60s prior to get 60s posterior
+# we used m=180 and v=400 to describe our uncertainty about mu, and a=2 and 
+# b=3600 to desribe our uncertainty about the variance sigma2
+post_60s <- unit8.gibbs(duration_60, m=180, v=400, a=2, b=3600, M=10000, burn=1000)
+
+# check the convergence for mu and sigma2
+plot(post_60s[,1], type="l")
+plot(post_60s[,2], type="l")
+
+# check the mixing with acf plots
+acf(post_60s[,1])
+acf(post_60s[,2])
+
+# 95 % credible interval on the posterior mu
+quantile(post_60s[,1], c(0.025, 0.975))
+
+
+# plot the posterior draws for the mean (post_60s[,1])
+plot(seq(140,220,length=1001), dnorm(seq(100,260,length=1001), 
+          m_60, sqrt(v_60)), type = "l", main="Prior vs. Posterior for 60s song 
+     length", xlab= "Song Length in Seconds", ylab="Density", ylim=c(0,.075), 
+     col="red");
+legend(x="topleft", legend=c("Prior","Posterior", "Credible Interval Bounds"), 
+       col=c("red", "blue", "darkgreen"), lty=1)
+lines(density(post_60s[,1]), col="blue")
+abline(v=quantile(post_60s[,1], c(0.025, 0.975)), col="darkgreen", lty=2)
+
+# Now lets look at post_60s[,2], sigma2
+mean(post_60s[,2])
+plot(density(post_60s[,2]))
+
+# find 95% credible interval for variance
+quantile(post_60s[,2], c(0.025, 0.975))
+
+# compare prior and posterior for variance
+plot(seq(0,10000,length=1001), dinvgamma(seq(0,10000,length=1001), 2, 3600), 
+     type="l", col = "red", ylim=c(0,0.0008), main="Prior vs. Posterior on 
+     Variance", xlab="Variance of Song Length", ylab="Density");
+legend(x="topright", legend=c("Prior", "Posterior", "Credible Interval"), col=
+         c("red", "blue", "darkgreen"), lty=1)
+lines(density(post_60s[,2]), col="blue")
+abline(v=quantile(post_60s[,2], c(0.025, 0.975)), col="darkgreen", lty=2)
+```
+
+
+
+Next, lets do almost the same exact analysis, but for the song lengths of 
+today's top songs
+```{r}
+# Prior parameter values
+# Let's once again choose m=180, expecting songs to also be 3 minutes long today
+# We would once again expect songs to vary by a minute on either end, 
+# so lets have a variance v of (120/6)^2 = 400
+m_today <- 180; v_today <- 400
+# and again, lets choose the same values of a and b as before, having no real
+# information that popular songs have differed all that much since the 60s
+a <- 2; b <- 3600
+
+# run the gibbs sampler for the todays prior to get todays posterior
+# we used m=180 and v=400 to describe our uncertainty about mu, and a=2 and 
+# b=3600 to desribe our uncertainty about the variance sigma2
+post_today <- unit8.gibbs(duration_today, m=180, v=400, a=2, b=3600, M=10000, 
+                          burn=1000)
+
+# check the convergence for mu and sigma2
+plot(post_today[,1], type="l")
+plot(post_today[,2], type="l")
+
+# check the mixing with acf plots
+acf(post_today[,1])
+acf(post_today[,2])
+
+# 95 % credible interval on the posterior mu
+quantile(post_today[,1], c(0.025, 0.975))
+
+
+# plot the posterior draws for the mean (post_60s[,1])
+plot(seq(140,220,length=1001), dnorm(seq(100,260,length=1001), 
+          m_60, sqrt(v_60)), type = "l", main="Prior vs. Posterior for today's 
+          song length", xlab= "Song Length in Seconds", ylab="Density", 
+     ylim=c(0,.075), col="red");
+legend(x="topleft", legend=c("Prior","Posterior", "Credible Interval Bounds"), 
+       col=c("red", "blue", "darkgreen"), lty=1)
+lines(density(post_today[,1]), col="blue")
+abline(v=quantile(post_today[,1], c(0.025, 0.975)), col="darkgreen", lty=2)
+
+# Now lets look at post_60s[,2], sigma2
+
+# find 95% credible interval for variance
+quantile(post_today[,2], c(0.025, 0.975))
+
+# compare prior and posterior for variance
+plot(seq(0,10000,length=1001), dinvgamma(seq(0,10000,length=1001), 2, 3600), 
+     type="l", col = "red", ylim=c(0,0.0013), main="Prior vs. Posterior on 
+     Variance", xlab="Variance of Song Length", ylab="Density");
+legend(x="topright", legend=c("Prior", "Posterior", "Credible Interval"), col=
+         c("red", "blue", "darkgreen"), lty=1)
+lines(density(post_today[,2]), col="blue")
+abline(v=quantile(post_today[,2], c(0.025, 0.975)), col="darkgreen", lty=2)
+
+```
+
+
+Now, let's analyze the difference between our posterior draws from the 60s vs
+today's top songs.
+
+```{r}
+# Create the vectors containing the difference for mu and sigma2
+diff_mu <- post_60s[,1] - post_today[,1]
+diff_sigma2 <- post_60s[,2] - post_today[,2]
+
+# find 95% credible interval on the difference
+quantile(diff_mu, c(0.025, 0.975))
+
+plot(density(diff_mu), main="Difference in means; 60s - Today", 
+     xlab= "Difference in mean mu")
+abline(v=quantile(diff_mu, c(0.025, 0.975)), col="darkgreen", lty=2)
+
+# Now for the difference in sigma2, variance
+# lets find the 95% credible interval first
+quantile(diff_sigma2, c(0.025, 0.975))
+
+plot(density(diff_sigma2), main="Difference in variance; 60s - Today", 
+     xlab= "Difference in variance sigma2")
+abline(v=quantile(diff_sigma2, c(0.025, 0.975)), col="darkgreen", lty=2)
+
+```
+

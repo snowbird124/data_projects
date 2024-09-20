@@ -1,0 +1,347 @@
+---
+title: "Bayes Analysis - Blood Pressure"
+author: "Layne Larson"
+date: "2024-04-22"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+set.seed(101)
+library(invgamma)
+```
+
+1a.
+```{r}
+# Data
+control <- c(35.25,43.21, 47.63, 48.99, 32.34, 34.69, 34.39, 36.58, 33.85, 
+             32.26, 36.71, 35.01, 38.42, 39.98, 40.04)
+tmt <- c(35.40, 44.79, 51.10, 50.66, 31.25, 38.80, 39.65, 38.49, 34.97, 32.24, 
+         34.18, 33.46, 44.45, 42.86, 39.11)
+
+unit8.gibbs <- function(data,m=0,v=1000,a=1,b=1,M=5000, burn=1000){
+  ybar <- mean(data); n <- length(data)
+  mu <- numeric()
+  sigma2 <- numeric()
+ 
+  mu[1] <- rnorm(1, ybar, 100) 
+  sigma2[1] <- rnorm(1, var(data), 10)
+  
+  for(i in 2:M) { 
+    astar <- a + 0.5*n
+    bstar <- b + 0.5*sum((data - mu[i-1])^2)
+    sigma2[i] <- rinvgamma(1, shape=astar, rate=bstar)
+  
+    mstar <- (n*ybar/sigma2[i] + m/v)/(n/sigma2[i] + 1/v)
+    vstar <- 1/(n/sigma2[i] + 1/v)
+    mu[i] <- rnorm(1, mstar, sqrt(vstar))
+  }
+  
+  out <- cbind(mu, sigma2)[-c(1:burn),]
+  colnames(out) <- c("mu","sigma2")
+  out
+
+}
+
+post_control <- unit8.gibbs(control, m=35, v=100, a=1, b=1, M=11000, burn=1000)
+post_tmt <- unit8.gibbs(tmt, m=40, v=100, a=1, b=1, M=11000, burn=1000)
+
+# Check convergence of the control and treatment posteriors- for both mu and 
+# sigma2
+par(mfrow=c(2,2))
+plot(post_control[,1], type="l", main="Trace plot for control mu")
+plot(post_control[,2], type="l", main="Trace plot for control sigma2")
+# for the control, the convergence looks good. The trace plots show that they 
+# aren't trending up or down, but filtering up and down randomly.
+
+# now for the mu and sigma2 trace plots for the treatment
+
+plot(post_tmt[,1], type="l", main="Trace plot for treatment mu")
+plot(post_tmt[,2], type="l", main="Trace plot for treatment sigma2")
+# the convergence on the treatment posterior is just as good as the control, 
+# for the same reasons listed above.
+
+# Now lets check the mixing by using auto correlation plots
+par(mfrow=c(2,2))
+acf(post_control[,1])
+acf(post_control[,2])
+# both of these look really good for the control. There is autocorrelation at 0,
+# but then it immediately jumps down into a non consequential range
+
+acf(post_tmt[,1])
+acf(post_tmt[,2])
+# the same holds true for the acf plots and the mixing for the treatmnet 
+# posterior as well
+```
+
+1b.
+```{r}
+par(mfrow=c(2,2))
+plot(density(post_control[,1]), main="Posterior vs. Prior Density for 
+     Control Mu", xlab=expression(mu), xlim=c(5,65), col="blue")
+lines(seq(0, 75, length=1001), dnorm(seq(0,75,length=1001), mean=35, sd=10),
+      type="l", col="red")
+legend(x="topleft", legend=c("Prior", "Posterior"), col= c("red", "blue"), 
+       lty=1)
+
+plot(density(post_control[,2]), main="Posterior vs. Prior Density 
+     for Control Sigma2", xlab=expression(sigma^2), ylim=c(0,0.55),
+     xlim=c(0, 100), col="blue")
+lines(seq(0,70, length=1001), dinvgamma(seq(0,70,length=1001), 1, 1), type="l",
+     col="red")
+legend(x="topright", legend=c("Prior", "Posterior"), col= c("red", "blue"), 
+       lty=1)
+
+
+plot(density(post_tmt[,1]), main="Posterior vs. Prior Density for Treatment Mu", 
+     xlab=expression(mu), xlim=c(10,70), col="blue")
+lines(seq(0, 75, length=1001), dnorm(seq(0,75,length=1001), mean=40, sd=10),
+      type="l", col="red")
+legend(x="topright", legend=c("Prior", "Posterior"), col= c("red", "blue"), 
+       lty=1)
+
+
+plot(density(post_tmt[,1]), main="Posterior vs. Prior Density for Treatment 
+     Sigma2", xlab=expression(sigma^2), ylim=c(0,0.55), xlim=c(0,70), 
+     col="blue")
+lines(seq(0,70, length=1001), dinvgamma(seq(0,70,length=1001), 1, 1), type="l",
+     col="red")
+legend(x="topright", legend=c("Prior", "Posterior"), col= c("red", "blue"), 
+       lty=1)
+
+
+
+
+```
+
+1c.
+```{r}
+diff_mu <- post_control - post_tmt
+
+plot(density(diff_mu), type="l")
+quantile(diff_mu, c(0.025, 0.975))
+
+# the above plot and credible interval show that we would not reject the null.
+# basically we would conclude that there is no meaningful difference between
+# the control and treatment.
+```
+
+1d.
+```{r}
+# i.
+# since the researcher expects the difference to be close to 0, lets choose a 
+# prior m value of 0. And he expects the difference to be no bigger than + or -
+# 10, so lets choose a prior v of 20/6 (since 20 is our range, and then divide
+# that by 6 for 6 standard deviations).
+
+# ii.
+# I would say the assumption of normality is reasonable. We are measuring a 
+# continous variable, and the difference could be either positive or negative,
+# so a normal distribution covers that support.
+
+# iii.
+m <- 0 ; v <- 20/6
+n <- length(control-tmt) ; ybar <- mean(control-tmt)
+sigma2 <- 7
+mstar <- (n*v*ybar + sigma2 * m)/(n*v + sigma2)
+vstar <- (v*sigma2)/(n*v + sigma2)
+
+plot(seq(-10, 10, length=1001), dnorm(seq(-10, 10, length=1001), mean=mstar, sd=
+       sqrt(vstar)), type="l", ylab="Density", xlab="Control - Treatment", main=
+       "Control - Treatment mu Posterior")
+qnorm(c(0.025,0.975), mean=mstar, sd=sqrt(vstar))
+
+# the above plot and credible interval shows that we would conclude that there 
+# is a significant difference between the control and treatment. This is because
+# the 95% credible interval does not contain 0.
+
+```
+
+1e.
+I would say that the first method was better, because we leveraged the power
+of modeling and computing to draw 10,000 samples, based on our data, rather than
+just simply using our 15 data points. 
+
+
+2.
+```{r}
+library(MASS)
+head(Pima.tr)
+
+# create subsets of the data for blood pressure and bmi for diabetic and healthy
+bp_d <- subset(Pima.tr$bp, Pima.tr$type == "Yes")
+bp_h <- subset(Pima.tr$bp, Pima.tr$type == "No")
+bmi_d <- subset(Pima.tr$bmi, Pima.tr$type == "Yes")
+bmi_h <- subset(Pima.tr$bmi, Pima.tr$type == "No")
+
+# first, lets check the plots and lines of best fit from a simple frequentist 
+# approach
+par(mfrow=c(1,2))
+plot(bmi_d, bp_d)
+abline(lm(bp_d ~ bmi_d), col="red")
+plot(bmi_h, bp_h)
+abline(lm(bp_h ~ bmi_h), col="red")
+
+# the assumptions we need to make to do this linear regression all hold in this
+# case. Namely that the error terms are iid normal, and the observations are 
+# independent as well. So let us continue
+
+# Prior Values
+m0 <- 0; v0 <- 100^2
+m1 <- 0; v1 <- 100^2
+a <- 1; b <- 1
+
+beta0_d <- beta1_d <- sigma2_d <- numeric()
+beta0_h <- beta1_h <- sigma2_h <- numeric()
+
+lm_d <- lm(bp_d ~ bmi_d)
+beta0_d[1] <- lm_d$coefficients[1]
+beta1_d[1] <- lm_d$coefficients[2]
+sigma2_d[1] <- summary(lm_d)$sigma^2
+
+lm_h <- lm(bp_h ~ bmi_h)
+beta0_h[1] <- lm_h$coefficients[1]
+beta1_h[1] <- lm_h$coefficients[2]
+sigma2_h[1] <- summary(lm_h)$sigma^2
+
+sumx2_d <- sum(bmi_d^2)
+n_d <- length(bp_d)
+
+sumx2_h <- sum(bmi_h^2)
+n_h <- length(bp_h)
+
+# Gibbs sampling loop for diabetes
+M <- 100000
+for(i in 2:M){
+  # update beta0_d using complete conditional of beta0_d
+  mstar_d <-  ((1/sigma2_d[i-1])*sum(bp_d-beta1_d[i-1]*bmi_d) + (1/v0)*m0)/
+             (n_d/sigma2_d[i-1] + 1/v0)	
+  vstar_d <- 1/(n_d/sigma2_d[i-1] + 1/v0)
+  beta0_d[i] <- rnorm(1, mstar_d, sqrt(vstar_d))
+  
+  # update beta1_d using complete conditional of beta1_d
+  mstar_d <- ((1/sigma2_d[i-1])*sum(bmi_d*(bp_d-beta0_d[i])) + (1/v1)*m1)/
+           (sumx2_d/sigma2_d[i-1] + 1/v1)
+  vstar_d <- 1/(sumx2_d/sigma2_d[i-1] + 1/v1)
+  beta1_d[i] <- rnorm(1, mstar_d, sqrt(vstar_d))	
+  
+  # update sigma2 using its complete conditional
+  astar_d <- 0.5*n_d + a
+  bstar_d <- 0.5*sum((bp_d - (beta0_d[i] + beta1_d[i]*bmi_d))^2) + b
+  sigma2_d[i] <- rinvgamma(1, shape=astar_d, rate=bstar_d)
+}
+
+# Second gibbs sampling loop for healthy
+M <- 100000
+for(i in 2:M){
+  # update beta0_d using complete conditional of beta0_d
+  mstar_h <-  ((1/sigma2_h[i-1])*sum(bp_h-beta1_h[i-1]*bmi_h) + (1/v0)*m0)/
+             (n_h/sigma2_h[i-1] + 1/v0)	
+  vstar_h <- 1/(n_h/sigma2_h[i-1] + 1/v0)
+  beta0_h[i] <- rnorm(1, mstar_h, sqrt(vstar_h))
+  
+  # update beta1_d using complete conditional of beta1_d
+  mstar_h <- ((1/sigma2_h[i-1])*sum(bmi_h*(bp_h-beta0_h[i])) + (1/v1)*m1)/
+           (sumx2_h/sigma2_h[i-1] + 1/v1)
+  vstar_h <- 1/(sumx2_h/sigma2_h[i-1] + 1/v1)
+  beta1_h[i] <- rnorm(1, mstar_h, sqrt(vstar_h))	
+  
+  # update sigma2 using its complete conditional
+  astar_h <- 0.5*n_h + a
+  bstar_h <- 0.5*sum((bp_h - (beta0_h[i] + beta1_h[i]*bmi_h))^2) + b
+  sigma2_h[i] <- rinvgamma(1, shape=astar_d, rate=bstar_d)
+}
+
+```
+Now lets check convergence and mixing and all of that
+
+```{r}
+# convergence plots for diabetes data and healthy data
+par(mfrow=c(3,2))
+plot(beta0_d, type='l') 
+plot(beta1_d, type='l')
+plot(sigma2_d, type='l')
+
+plot(beta0_h, type='l') 
+plot(beta1_h, type='l')
+plot(sigma2_h, type='l')
+
+# all of these look good, with no trends up or down, and they bounce around the
+# whole space well
+
+# autocorrelation plots to check the mixing
+par(mfrow=c(3,2))
+acf(beta0_d)
+acf(beta1_d)
+acf(sigma2_d)
+
+acf(beta0_h)
+acf(beta1_h)
+acf(sigma2_h)
+
+# the mixing does NOT look good, so let's do some thinning to get it where it 
+# needs to be. Let's thin by 100 first and burn in by 10, and then see where we
+# are at.
+keep <- seq(10,M, by=100)
+
+par(mfrow=c(3,2))
+acf(beta0_d[keep])
+acf(beta1_d[keep])
+acf(sigma2_d[keep])
+
+acf(beta0_h[keep])
+acf(beta1_h[keep])
+acf(sigma2_h[keep])
+
+# this looks good now, with all of our acf factors being within a reasonable 
+# range after 1 lag.
+
+```
+
+Now that the mixing and convergence are good, lets move onto analysis and 
+conclusions
+
+```{r}
+# Let's use the results of our gibbs samplers and fit them to our model,
+# ydi = β0d + β1dxdi 
+# yhi = β0h + β1hxhi 
+
+post_fit_d <- mean(beta0_d[keep]) + mean(beta1_d[keep]) * bmi_d
+post_fit_h <- mean(beta0_h[keep]) + mean(beta1_h[keep]) * bmi_h
+
+par(mfrow=c(1,2))
+plot(bmi_d, bp_d)
+lines(bmi_d, post_fit_d, col='red', lwd=2)
+
+plot(bmi_h, bp_h)
+lines(bmi_h, post_fit_h, col='red', lwd=2)
+
+# looking at it graphically, we can see the slope, beta1, for both our diabetes
+# and healthy data. At first glance, I probably would conclude that there is no
+# significant difference between beta1_d and beta1_h, but lets do a formal 
+# analysis.
+
+diff_beta1 <- beta1_h[keep] - beta1_d[keep]
+
+# let's look at a density plot and Credible Interval for β1h − β1d
+plot(density(diff_beta1))
+quantile(diff_beta1, c(0.025, 0.975))
+
+# as we can see on the density plot, and the credible interval, there is not
+# sufficient evidence to claim that beta1_d and beta1_h are different from each 
+# other. Our credible interval contains the difference 0.
+```
+
+Therefore, we can finally conclude that the relationship between BMI and blood
+pressure for Pima Indian women who are diabetic vs. non-diabetic is not
+meaningfully different. 
+The End!
+
+
+
+
